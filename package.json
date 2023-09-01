@@ -1,0 +1,19 @@
+{
+  "name": "vpnsailess",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "nodemonConfig": { "ignore": ["*.json"] },
+  "devDependencies": {
+    "@types/node-telegram-bot-api": "^0.61.7",
+    "nodemon": "^3.0.1"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.61.0"
+  }
+}

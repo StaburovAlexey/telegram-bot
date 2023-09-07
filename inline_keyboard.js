@@ -1,8 +1,28 @@
 const backButton = {
   text: `↩ Назад`,
-  callback_data: 'back',
+  callback_data: "back",
 };
 
+const adminBtn = [
+  [
+    {
+      text: "Количество пользователей",
+      callback_data: "message_user",
+    },
+  ],
+  [
+    {
+      text: "Количество активных ключей",
+      callback_data: "message_active_key",
+    },
+  ],
+  [
+    {
+      text: "Количество ключей",
+      callback_data: "message_key",
+    },
+  ],
+];
 const inline_keyboard = [
   [
     {
@@ -30,57 +50,6 @@ const inline_keyboard = [
   ],
 ];
 
-const bay_keyboard = [
-  [
-    {
-      text: "1 месяц / 120руб",
-      callback_data: "1m",
-    },
-  ],
-  [
-    {
-      text: "3 месяца / 360руб",
-      callback_data: "3m",
-    },
-  ],
-  [
-    backButton,
-  ],
-];
-
-const extend_keyboard = [
-  [
-    {
-      text: "1 месяц / 120руб",
-      callback_data: "1m-ext",
-    },
-  ],
-  [
-    {
-      text: "3 месяца / 360руб",
-      callback_data: "3m-ext",
-    },
-  ],
-  [
-    {
-      text: "6 месяцев / 720руб",
-      callback_data: "6m-ext",
-    },
-  ],
-  [
-    {
-      text: "12 месяцев / 1440руб",
-      callback_data: "12m-ext",
-    },
-  ],
-  [
-    {
-      text: "Назад",
-      callback_data: "back",
-    },
-  ],
-];
-
 const extendKey = [
   [
     {
@@ -88,31 +57,27 @@ const extendKey = [
       callback_data: "extend_key",
     },
   ],
-  [
-    backButton,
-  ],
-]
+  [backButton],
+];
 
 const appBtn = [
   [
     {
-      text:'🤖 Android',
-      url: 'https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1',
+      text: "🤖 Android",
+      url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
     },
     {
-      text:'🍎 iOS',
-      url: 'https://apps.apple.com/us/app/foxray/id6448898396',
-    }
+      text: "🍎 iOS",
+      url: "https://apps.apple.com/us/app/foxray/id6448898396",
+    },
   ],
-  [
-    backButton,
-  ]
-]
+  [backButton],
+];
+
 module.exports = {
   inline_keyboard,
-  bay_keyboard,
-  extend_keyboard,
   extendKey,
   appBtn,
-  backButton
+  backButton,
+  adminBtn,
 };

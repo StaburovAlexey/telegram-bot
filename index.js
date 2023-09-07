@@ -1,38 +1,34 @@
+const { match } = require("assert");
 const {
   inline_keyboard,
-  bay_keyboard,
-  extend_keyboard,
   extendKey,
   appBtn,
   backButton,
+  adminBtn,
 } = require("./inline_keyboard");
+
 // импортируем модуль для работы с файловой системой
 const fs = require("fs");
-const TelegramBot = require("node-telegram-bot-api");
-const TOKEN = "6347079453:AAHpnwn959SH4yi4Oo4VWk7zpaC_LFCxS1U";
+
 const myId = 807148322;
 const btnsPeriod = ["1", "3"];
 
 console.log("bot activated");
-
-const bot = new TelegramBot(TOKEN, {
-  polling: true,
-});
+const { bot } = require("./token");
 
 bot.on("polling_error", console.log);
+//создание массива активных ключей
+function creatKeyArray(usersArray) {
+  const keys = [];
+  usersArray.forEach((element) => keys.push([element[0]]));
+  return keys;
+}
 
 //создание кнопок из массива ключей
-function creatBtnsKey(userKey) {
-  const btns = [];
-  userKey.forEach((element) =>
-    btns.push([
-      {
-        text: element.name,
-        callback_data: element.name,
-      },
-    ])
-  );
-  return btns;
+function creatIdArray(arrayUsers) {
+  const ids = [];
+  arrayUsers["id"].forEach((element) => btns.push(element));
+  return ids;
 }
 
 //создание кнопок продления
@@ -162,7 +158,7 @@ function getKeyExpendet(keybase, userId, period) {
       console.log("Ключи закончились");
       bot.sendMessage(userId, "ключи закочились");
     } else if (length >= 1) {
-      bot.sendMessage(userId, "дохуя ключей у тебя, не думаешь?");
+      bot.sendMessage(userId, "У вас есть, ключ. Просто продлите его.");
     } else {
       addPropertyToObject(object, "key", randomElement);
       saveArrayToFile(arrayUser, "user-data.json");
@@ -229,16 +225,6 @@ bot.on("callback_query", (query) => {
     }
   });
 
-  if (query.data === "back") {
-    // Возвращаемся на предыдущий экран
-
-    bot.editMessageText("Выбыирайте", {
-      chat_id: query.message.chat.id,
-      message_id: query.message.message_id,
-      reply_markup: { inline_keyboard },
-    });
-  }
-
   switch (query.data) {
     //кнопка купить ключ
     case "bay":
@@ -263,6 +249,24 @@ bot.on("callback_query", (query) => {
 
       break;
 
+    case "back":
+      // Возвращаемся на предыдущий экран
+
+      bot.editMessageText(
+        `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
+
+  📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
+        
+  🚀 Хорошая скорость и неограниченное число устройств
+        
+  🚧  VPN надежно защищен от блокировок`,
+        {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          reply_markup: { inline_keyboard },
+        }
+      );
+      break;
     //проверка наличи ключей
     case "check":
       if (userKey === undefined) {
@@ -274,11 +278,8 @@ bot.on("callback_query", (query) => {
           },
         });
       } else {
-        bot.sendMessage(
-          userId,
-          `Ваш ключ:
-${userKey.key}`
-        );
+        bot.sendMessage(userId, `Ваш ключ`);
+        bot.sendMessage(userId, `${userKey.key}`);
       }
 
       break;
@@ -311,11 +312,97 @@ ${userKey.key}`
         `Опишите вашу проблему. Начните сообщение с /help`
       );
       break;
+    
+    case "message_key":
+      if (userId === myId) {
+        fs.readFile("dataKeys1m.json", "utf8", (err, data) => {
+          if (err) {
+            console.error(err);
+            return;
+          }
+          const arrayKeys = JSON.parse(data);
+
+          const length = arrayKeys.length;
+
+          bot.editMessageText(`Ключей осталось ${length}`, {
+            chat_id: chat.id,
+            message_id: message_id,
+            reply_markup: {
+              inline_keyboard: [...adminBtn],
+            },
+          });
+        });
+      }
+      break;
+
+    case "message_user":
+      if (userId === myId) {
+        fs.readFile("user-data.json", "utf8", (err, data) => {
+          if (err) {
+            console.error(err);
+            return;
+          }
+          const arrayUser = JSON.parse(data);
+
+          const length = arrayUser.length;
+          bot.editMessageText(`Пользователей ${length}`, {
+            chat_id: chat.id,
+            message_id: message_id,
+            reply_markup: {
+              inline_keyboard: [...adminBtn],
+            },
+          });
+        });
+      }
+      break;
+
+    case "message_active_key":
+      if (userId === myId) {
+        fs.readFile("user-data.json", "utf8", (err, data) => {
+          if (err) {
+            console.error(err);
+            return;
+          }
+          const arrayUser = JSON.parse(data);
+          const usersWithKey = arrayUser.filter((item) => item.key != 0).length;
+          bot.editMessageText(`Активных ключей ${usersWithKey}`, {
+            chat_id: chat.id,
+            message_id: message_id,
+            reply_markup: {
+              inline_keyboard: [...adminBtn],
+            },
+          });
+        });
+      }
+      break;
   }
 
   bot.answerCallbackQuery({
     callback_query_id: query.id,
   });
+});
+bot.onText(/\/admin/, (msg, [source, match]) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const username = msg.from.username;
+
+  if (userId === myId) {
+    bot.sendMessage(
+      userId,
+      `
+Команды админа:
+
+/sendAll - отправить сообщение всем
+/sendOne userId - отправить сообщение пользователю
+
+    `,
+      {
+        reply_markup: {
+          inline_keyboard: [...adminBtn],
+        },
+      }
+    );
+  }
 });
 
 bot.onText(/\/start/, (msg, [source, match]) => {
@@ -325,10 +412,63 @@ bot.onText(/\/start/, (msg, [source, match]) => {
 
   storeUserData(userId, username, chatId);
 
-  bot.sendMessage(chatId, "выбирайте", {
-    reply_markup: {
-      inline_keyboard,
-    },
+  bot.sendMessage(
+    chatId,
+    `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
+
+  📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
+    
+  🚀 Хорошая скорость и неограниченное число устройств
+
+  🚧  VPN надежно защищен от блокировок`,
+    {
+      reply_markup: {
+        inline_keyboard,
+      },
+    }
+  );
+});
+
+bot.onText(/\/sendAll (.+)/, (msg, [source, match]) => {
+  const { id } = msg.chat;
+
+  fs.readFile("user-data.json", "utf8", (err, data) => {
+    if (err) {
+      console.error(err);
+      return;
+    }
+
+    const array = JSON.parse(data);
+
+    array.forEach((user) => {
+      bot.sendMessage(user.id, `${match}`);
+    });
+  });
+});
+
+bot.onText(/\/sendOne (.+)/, (msg, [source, match]) => {
+  const { id } = msg.chat;
+  fs.readFile("user-data.json", "utf8", (err, data) => {
+    if (err) {
+      console.error(err);
+      return;
+    }
+    //делаем из сообщения массив
+    const matchArray = match.split(" ");
+    //удаляем из массива сообщения id пользователя
+    const newArray = matchArray.slice(1);
+    //возвращаем строку
+    const string = newArray.join(" ");
+
+    const array = JSON.parse(data);
+
+    const user = array.find((user) => user.id == `${matchArray[0]}`);
+
+    if (user === undefined) {
+      bot.sendMessage(myId, "Не нашел id");
+    } else {
+      bot.sendMessage(user.id, string);
+    }
   });
 });
 
@@ -344,7 +484,7 @@ bot.onText(/\/help (.+)/, (msg, [source, match]) => {
       IDMessege: ${msg.message_id}
       Name: ${msg.from.username}
       text:
-      ${msg.text}`
+      ${match}`
     )
     .then(() => {
       bot.sendMessage(id, "заявка отправлена!", {

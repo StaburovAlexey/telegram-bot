@@ -1,4 +1,6 @@
 const { match } = require("assert");
+// импортируем модуль для работы с файловой системой
+const fs = require("fs");
 const {
   inline_keyboard,
   extendKey,
@@ -7,14 +9,24 @@ const {
   adminBtn,
 } = require("./inline_keyboard");
 
-// импортируем модуль для работы с файловой системой
-const fs = require("fs");
+//=====================================
+const https = require("node:https");
+
+const dataPay = {
+  amount: "1",
+  currency: "USD",
+  order_id: "",
+  to_currency: "USDT",
+  network: "tron",
+};
+//==================
 
 const myId = 807148322;
 const btnsPeriod = ["1", "3"];
 
 console.log("bot activated");
-const { bot } = require("./token");
+const { bot, APIKEY, MERCHANTID } = require("./token");
+const { url } = require("inspector");
 
 bot.on("polling_error", console.log);
 //создание массива активных ключей
@@ -164,7 +176,7 @@ function getKeyExpendet(keybase, userId, period) {
       saveArrayToFile(arrayUser, "user-data.json");
       bot.sendMessage(
         userId,
-        `Ваш ключ на ${period} месяц(а): 
+        `Ваш ключ на ${period} месяц(а):
 ${randomElement.key}`
       );
       deleteElement(arrayKeys, randomElement);
@@ -197,7 +209,7 @@ bot.on("callback_query", (query) => {
       bot.sendMessage(
         myId,
         `запрос на продление от пользователя на 1 месяц:
-       
+
       UserName: ${username}
       UserId:   ${userId}
       key:  ${userKey.name}
@@ -207,14 +219,14 @@ bot.on("callback_query", (query) => {
       bot.sendMessage(
         userId,
         `заявка на продление ключа на 3 месяца отправлена
-        
-Ваш ключ:        
+
+Ваш ключ:
 '${userKey.key}'`
       );
       bot.sendMessage(
         myId,
         `запрос на продление от пользователя на 3 месяцa:
-       
+
       UserName: ${username}
       UserId:   ${userId}
       key:  ${userKey.name}
@@ -256,9 +268,9 @@ bot.on("callback_query", (query) => {
         `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
 
   📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
-        
+
   🚀 Хорошая скорость и неограниченное число устройств
-        
+
   🚧  VPN надежно защищен от блокировок`,
         {
           chat_id: query.message.chat.id,
@@ -312,7 +324,7 @@ bot.on("callback_query", (query) => {
         `Опишите вашу проблему. Начните сообщение с /help`
       );
       break;
-    
+
     case "message_key":
       if (userId === myId) {
         fs.readFile("dataKeys1m.json", "utf8", (err, data) => {
@@ -375,6 +387,52 @@ bot.on("callback_query", (query) => {
         });
       }
       break;
+
+    case "checkpay":
+      const arrayUser = createArrayFromFile("user-data.json");
+      //ищем пользователя по id
+      const object = findObjectInArray(arrayUser, "id", userId);
+      //добавляем в dataPay номер заказа у пользователя
+      dataPay.order_id = object.order["order_id"];
+      const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
+      const sign = require("node:crypto")
+        .createHash("md5")
+        .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
+        .digest("hex");
+      const options = {
+        hostname: "api.cryptomus.com",
+        path: "/v1/payment",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          merchant: MERCHANTID,
+          sign: sign,
+        },
+      };
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          const payFile = JSON.parse(body);
+          if (payFile.result["payment_status"] === "paid") {
+            bot.sendMessage(userId, "Платеж прошел успешно!");
+          } else {
+            bot.sendMessage(userId, "Ошибка платежа!");
+          }
+        });
+      });
+
+      req.on("error", (error) => {
+        console.error(error);
+      });
+
+      req.write(jsonDataPay);
+
+      req.end();
+
+      break;
   }
 
   bot.answerCallbackQuery({
@@ -417,7 +475,7 @@ bot.onText(/\/start/, (msg, [source, match]) => {
     `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
 
   📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
-    
+
   🚀 Хорошая скорость и неограниченное число устройств
 
   🚧  VPN надежно защищен от блокировок`,
@@ -504,4 +562,86 @@ bot.onText(/\/more/, (msg) => {
 
     Google (с)`
   );
+});
+
+bot.onText(/\/pay/, (msg) => {
+  const chatId = msg.from.id;
+  const data = {
+    amount: "1",
+    currency: "USD",
+    order_id: "10",
+    to_currency: "TON",
+    network: "TON",
+  };
+
+  const jsonDataPay = JSON.stringify(data).replace(/\//gm, "\\/");
+
+  const sign = require("node:crypto")
+    .createHash("md5")
+    .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
+    .digest("hex");
+
+  const options = {
+    hostname: "api.cryptomus.com",
+    path: "/v1/payment",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      merchant: MERCHANTID,
+      sign: sign,
+    },
+  };
+
+  const req = https.request(options, (res) => {
+    let body = "";
+    res.on("data", (chunk) => {
+      body += chunk;
+    });
+    res.on("end", () => {
+      //получаем массив из body
+      const payFile = JSON.parse(body);
+
+      console.log(payFile);
+      //массив пользователей
+      const arrayUser = createArrayFromFile("user-data.json");
+      //ищем пользователя по id
+      const object = findObjectInArray(arrayUser, "id", chatId);
+      //достаем нужные пораметры из ответа от cryptomus
+      const orderArray = {
+        order_id: `${payFile.result["order_id"]}`,
+        url: `${payFile.result["url"]}`,
+        payment_status: `${payFile.result["payment_status"]}`,
+      };
+      //добавляем даные по заказу пользователю
+      object.order = orderArray;
+      //сохраняем массив пользователей обратно в json
+      saveArrayToFile(arrayUser, "user-data.json");
+      bot.sendMessage(
+        chatId,
+        `Ваша ссылка на оплату  по заказу №${object.order["order_id"]}
+${object.order["url"]}
+после перехода по ссылке и оплаты, нажмите кнопку "проверить платеж"`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "Проверить платеж",
+                  callback_data: "checkpay",
+                },
+              ],
+            ],
+          },
+        }
+      );
+    });
+  });
+
+  req.on("error", (error) => {
+    console.error(error);
+  });
+
+  req.write(jsonDataPay);
+
+  req.end();
 });

@@ -1,4 +1,6 @@
 const { match } = require("assert");
+const { url } = require("inspector");
+const cron = require("node-cron");
 // импортируем модуль для работы с файловой системой
 const fs = require("fs");
 const {
@@ -7,246 +9,487 @@ const {
   appBtn,
   backButton,
   adminBtn,
+  checkBtn,
 } = require("./inline_keyboard");
-
+const { bot, APIKEY, MERCHANTID, uri } = require("./token");
 //=====================================
 const https = require("node:https");
-
+//подключаем Mongo
+const { MongoClient } = require("mongodb");
+// Replace the uri string with your connection string.
+const MongoDBclient = new MongoClient(uri);
+const db = MongoDBclient.db("vpnSAILess");
 const dataPay = {
-  amount: "1",
-  currency: "USD",
+  amount: "50",
+  currency: "RUB",
+  to_currency: "TON",
+  network: "TON",
   order_id: "",
-  to_currency: "USDT",
-  network: "tron",
+  lifetime: "300",
 };
-//==================
-
 const myId = 807148322;
-const btnsPeriod = ["1", "3"];
 
+//==================
 console.log("bot activated");
-const { bot, APIKEY, MERCHANTID } = require("./token");
-const { url } = require("inspector");
-
 bot.on("polling_error", console.log);
-//создание массива активных ключей
-function creatKeyArray(usersArray) {
-  const keys = [];
-  usersArray.forEach((element) => keys.push([element[0]]));
-  return keys;
-}
+cron.schedule("*/5 * * * * *", async () => {
+  arrayNotPaid();
+});
+//проверка оплаты для cron
+async function payCheck() {}
+//перебор неоконченных оплат
+async function arrayNotPaid() {
+  try {
+    await MongoDBclient.connect();
 
-//создание кнопок из массива ключей
-function creatIdArray(arrayUsers) {
-  const ids = [];
-  arrayUsers["id"].forEach((element) => btns.push(element));
-  return ids;
-}
+    const employees = db.collection("payment");
+    const payments = await employees.find({ isFinal: false }).toArray();
+    await MongoDBclient.close();
 
-//создание кнопок продления
-function creatBtnsPeriod(btnsArray) {
-  const btns = [];
-  btnsArray.forEach((element) =>
-    btns.push([
-      {
-        text: `⏳ ${element} месяц(а)`,
-        callback_data: `${element}-ext`,
-      },
-    ])
-  );
-  btns.push([backButton]);
-  return btns;
-}
+    payments.forEach((payment) => {
+      dataPay.order_id = payment.orderId;
 
-//создание кнопок покупки
-function creatBtnBay(btnsArray) {
-  const btns = [];
-  btnsArray.forEach((element) =>
-    btns.push([
-      {
-        text: `🛒 ${element} месяц(а)`,
-        callback_data: `${element}-bay`,
-      },
-    ])
-  );
-  btns.push([backButton]);
-  return btns;
-}
+      const jsonData = JSON.stringify(dataPay).replace(/\//gm, "\\/");
+      const sign = require("crypto")
+        .createHash("md5")
+        .update(Buffer.from(jsonData).toString("base64") + APIKEY)
+        .digest("hex");
 
-//перебор массива и получение его длинны
-function findArrayLength(array) {
-  let length = 0;
-  for (let i = 0; i < array.length; i++) {
-    length++;
-  }
-  if (length === undefined) {
-    return "Нет данных"; // если в массиве ничего не нашлось возвращаем строку
-  }
-  return length;
-}
+      const options = {
+        hostname: "api.cryptomus.com",
+        path: "/v1/payment",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          merchant: MERCHANTID,
+          sign: sign,
+        },
+      };
 
-//поиск пользователя из массива
-function findObjectInArray(array, property, value) {
-  for (let i = 0; i < array.length; i++) {
-    if (array[i][property] === value) {
-      return array[i];
-    }
-  }
-  return null;
-}
-//добовляем пользователю ключ
-function addPropertyToObject(object, property, value) {
-  if (object[property] === undefined) {
-    object[property] = [value];
-  } else {
-    object[property].push(value);
-  }
-}
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          const payFile = JSON.parse(body);
 
-//сохраняем массив пользователей в файл
-function saveArrayToFile(array, filename) {
-  fs.writeFile(filename, JSON.stringify(array, null, 2), (err) => {
-    if (err) {
-      console.error(err);
-    }
-  });
-}
-//получаем массив пользователей из файла
-function createArrayFromFile(filename) {
-  return JSON.parse(fs.readFileSync(filename));
-}
+          const orderId = payFile.result["order_id"];
+          const isFinal = payFile.result["is_final"];
+          if (
+            payFile.result["is_final"] === true &&
+            (payFile.result["payment_status"] === "wrong_amount" ||
+            payFile.result["payment_status"] === "paid_over" ||
+            payFile.result["payment_status"] === "paid")
+          ) {
+            updatingPaymentStatus(orderId, isFinal);
+            bot.sendMessage(
+              payment.userId,
+              `Оплата по заказу №${payment.orderId} прошла успешно! В течении 15-30 минут ключ будет продлен.`
+            );
+          } else if (
+            payFile.result["is_final"] === true ||
+            payFile.result["is_final"] === "cancel"
+          ) {
+            updatingPaymentStatus(orderId, isFinal);
+            bot.sendMessage(
+              payment.userId,
+              `время предоставления ссылки для оплаты по заказу №${payment.orderId}истекло. попробуйте заплатить сново`
+            );
+          }
+        });
+      });
 
-//добавление нового пользователя в базу
-function storeUserData(id, name, chat) {
-  // Check if the user's data has already been recorded
-  const data = fs.readFileSync("user-data.json");
-  const users = JSON.parse(data);
-  const user = users.find((user) => user.id === id);
+      req.on("error", (error) => {
+        console.error(error);
+      });
 
-  // Проверка на наличие пользователя в базе
-  if (!user) {
-    users.push({ id, name, chat, key: [] });
-    fs.writeFileSync("user-data.json", JSON.stringify(users, null, 2));
+      req.write(jsonData);
+      req.end();
+    });
+  } catch (e) {
+    console.log(e);
   }
 }
+//добавляем юзера в базу
+const InsertUser = async (user) => {
+  try {
+    await MongoDBclient.connect();
 
-//ищем рандомный ключ из базы ключей
-function getRandomElement(array) {
-  return array[Math.floor(Math.random() * array.length)];
-}
-// удаляем найденный ключ из базы
-function deleteElement(array, element) {
-  const index = array.indexOf(element);
-  if (index > -1) {
-    array.splice(index, 1);
+    const employees = db.collection("users");
+    await employees.insertOne(user);
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
   }
-}
-//обновляем файл базы ключей
-function saveFile(array, filename) {
-  fs.writeFile(filename, JSON.stringify(array, null, 2), (err) => {
-    if (err) {
-      console.error(err);
-    }
-  });
-}
-//выдаем ключ пользователю
-function getKeyExpendet(keybase, userId, period) {
-  const filename = keybase;
-  const arrayUser = createArrayFromFile("user-data.json");
-  const object = findObjectInArray(arrayUser, "id", userId);
-  //находим массив свойства 'key'
-  const arrayKey = object.key;
-  //получаем длинну массива 'key'
-  let length = findArrayLength(arrayKey);
-  fs.readFile(filename, "utf8", (err, data) => {
-    if (err) {
-      console.error(err);
-      return;
-    }
-    const arrayKeys = JSON.parse(data);
-    const randomElement = getRandomElement(arrayKeys);
+};
+//проверка юзера в базе если его нет то добаляем в базу
+const findUserAndAdd = async (user, userId) => {
+  try {
+    await MongoDBclient.connect();
+    console.log("Успешно подключились к базе данных");
 
-    if (arrayKeys.length === 0) {
-      console.log("Ключи закончились");
-      bot.sendMessage(userId, "ключи закочились");
-    } else if (length >= 1) {
-      bot.sendMessage(userId, "У вас есть, ключ. Просто продлите его.");
+    const findId = await db.collection("users").findOne({ userId: userId });
+    if (!findId) {
+      await InsertUser(user);
     } else {
-      addPropertyToObject(object, "key", randomElement);
-      saveArrayToFile(arrayUser, "user-data.json");
-      bot.sendMessage(
-        userId,
-        `Ваш ключ на ${period} месяц(а):
-${randomElement.key}`
-      );
-      deleteElement(arrayKeys, randomElement);
-      saveFile(arrayKeys, filename);
+      console.log("Пользователь уже добавлен");
     }
+
+    await MongoDBclient.close();
+    console.log("Закрыли подключение");
+  } catch (e) {
+    console.log(e);
+  }
+};
+//проверка есть ли ключ у пользователя
+const findUserHaveKey = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employees = db.collection("users");
+    const user = await employees.findOne({ userId: userId });
+
+    await MongoDBclient.close();
+    //возвращаем есть ли ключ
+    if (user.key) {
+      return true;
+    } else {
+      return false;
+    }
+  } catch (e) {
+    console.log(e);
+  }
+};
+//показать ключ пользователя
+const visionKeyUser = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employees = db.collection("users");
+    const user = await employees.findOne({ userId: userId });
+
+    await MongoDBclient.close();
+    //возвращаемключ
+    return user.key;
+  } catch (e) {
+    console.log(e);
+  }
+};
+//поиск не используемового ключа и выдача
+const searchAndKeyIssuance = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employeeskey = db.collection("keys");
+    const key = await employeeskey.findOne({ userId: { $exists: false } });
+    if (key) {
+      key.userId = userId;
+      // Обновить документ в коллекции
+      await employeeskey.updateOne({ _id: key._id }, { $set: key });
+      await giveKey(userId, key);
+    } else {
+      console.log('Документ без свойства "key" не существует в коллекции');
+    }
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
+  }
+};
+//добовление пользователю ключа
+const giveKey = async (userId, key) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employeesuser = db.collection("users");
+    const user = await employeesuser.findOne({ userId: userId });
+
+    user.key = [key.url, key.urlName];
+
+    await employeesuser.updateOne({ _id: user._id }, { $set: user });
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
+  }
+};
+//добовление оплаты в массив
+const writePayment = async (userId, order_id, amount, url, is_final) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employees = db.collection("payment");
+    await employees.insertOne({
+      userId: userId,
+      orderId: order_id,
+      amount: amount,
+      url: url,
+      isFinal: is_final,
+    });
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
+  }
+};
+const Find = async () => {
+  try {
+    await MongoDBclient.connect();
+    console.log("Успешно подключились к базе данных");
+
+    const AllDocuments = await db.collection("payment").find().toArray();
+    console.log(AllDocuments);
+
+    await MongoDBclient.close();
+    console.log("Закрыли подключение");
+  } catch (e) {
+    console.log(e);
+  }
+};
+const del = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+    console.log("Успешно подключились к базе данных");
+    // Получить коллекцию
+    const employees = db.collection("users");
+
+    // Удалить все документы из коллекции
+    await employees.deleteMany({});
+
+    // Закрыть соединение с базой данных
+    await MongoDBclient.close();
+    console.log("Закрыли подключение");
+  } catch (e) {
+    console.log(e);
+  }
+};
+async function pay(userId, message_id, sum) {
+  const randomValue = await generateOrderId();
+  dataPay.order_id = randomValue;
+  dataPay.amount = sum;
+  sendPay(dataPay, userId, message_id);
+}
+//генерация order_id и проверка на повторение
+async function generateOrderId() {
+  // Создать функцию для генерации случайного значения из цифр и букв
+  function generateRandomValue() {
+    // Создать пустую строку для хранения случайного значения
+    let randomValue = "";
+    // Сгенерировать 15 случайных чисел от 0 до 9 и добавить их к строке
+    for (let i = 0; i < 15; i++) {
+      randomValue += Math.floor(Math.random() * 10);
+    }
+
+    // Сгенерировать 15 случайных букв от A до Z и добавить их к строке
+    for (let i = 0; i < 15; i++) {
+      randomValue += String.fromCharCode(Math.floor(Math.random() * 26) + 65);
+    }
+
+    // Вернуть случайное значение
+    return randomValue;
+  }
+  const randomValue = generateRandomValue();
+  const find = await findArrayOrderId(randomValue);
+  if (find === true) {
+    generateOrderId();
+  } else {
+    return randomValue;
+  }
+}
+//есть ли сгенерированый ордер в базе возвращает булево значение
+const findArrayOrderId = async (randomValue) => {
+  try {
+    await MongoDBclient.connect();
+    const employees = db.collection("payment");
+    const payments = await employees.find({ orderId: randomValue }).toArray();
+    await MongoDBclient.close();
+    if (payments.length == 0) {
+      return false;
+    } else {
+      return true;
+    }
+  } catch (e) {
+    console.log(e);
+  }
+};
+//поиск оплаты по id юзера
+const findPaymentForId = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employees = db.collection("payment");
+    const payment = await employees
+      .find({ userId: userId, isFinal: false })
+      .limit(1)
+      .sort({ $natural: -1 })
+      .toArray();
+
+    await MongoDBclient.close();
+    //возвращаем платеж
+    return payment;
+  } catch (e) {
+    console.log(e);
+  }
+};
+//обновление статуса оплаты в базе
+const updatingPaymentStatus = async (orderId, isFinal) => {
+  try {
+    await MongoDBclient.connect();
+
+    const employees = db.collection("payment");
+    await employees.updateOne(
+      { orderId: orderId },
+      {
+        $set: { isFinal: isFinal },
+      }
+    );
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
+  }
+};
+//проверка оплаты пользователя
+async function checkPayUser(dataPay, userId) {
+  try {
+    const payment = await findPaymentForId(userId);
+    dataPay.order_id = payment[0].orderId;
+    const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
+
+    const sign = require("node:crypto")
+      .createHash("md5")
+      .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
+      .digest("hex");
+
+    const options = {
+      hostname: "api.cryptomus.com",
+      path: "/v1/payment",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        merchant: MERCHANTID,
+        sign: sign,
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        const payFile = JSON.parse(body);
+        if (
+          payFile.result["is_final"] === true &&
+          (payFile.result["payment_status"] === "paid" ||
+            payFile.result["payment_status"] === "paid_over" ||
+            payFile.result["payment_status"] === "wrong_amount")
+        ) {
+          const orderId = payFile.result["order_id"];
+          const isFinal = payFile.result["is_final"];
+          updatingPaymentStatus(orderId, isFinal);
+          bot.sendMessage(
+            payment[0].userId,
+            "Оплата прошла успешно! В течении 15-30 минут ключ будет продлен."
+          );
+        } else if (
+          payFile.result["is_final"] === true &&
+          payFile.result["payment_status"] === "cancel"
+        ) {
+          bot.sendMessage(
+            payment[0].userId,
+            "cсылка устарела, продлите ключ заного"
+          );
+        } else {
+          bot.sendMessage(payment[0].userId, "в процессе");
+        }
+      });
+    });
+
+    req.on("error", (error) => {
+      console.error(error);
+    });
+
+    req.write(jsonDataPay);
+
+    req.end();
+  } catch (e) {
+    console.log(e);
+  }
+}
+//отправка запроса на оплату
+function sendPay(dataPay, userId, message_id) {
+  const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
+
+  const sign = require("node:crypto")
+    .createHash("md5")
+    .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
+    .digest("hex");
+
+  const options = {
+    hostname: "api.cryptomus.com",
+    path: "/v1/payment",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      merchant: MERCHANTID,
+      sign: sign,
+    },
+  };
+
+  const req = https.request(options, (res) => {
+    let body = "";
+    res.on("data", (chunk) => {
+      body += chunk;
+    });
+    res.on("end", () => {
+      //получаем массив из body
+      const payFile = JSON.parse(body);
+      const order_id = payFile.result["order_id"];
+      const amount = payFile.result["amount"];
+      const url = payFile.result["url"];
+      const is_final = payFile.result["is_final"];
+      writePayment(userId, order_id, amount, url, is_final);
+      //добавляем даные по заказу пользователю
+
+      bot.editMessageText(
+        `Ваша ссылка на оплату  по заказу №${order_id}
+      ${url}
+      после перехода по ссылке и оплаты, нажмите кнопку "проверить платеж"`,
+        {
+          chat_id: userId,
+          message_id: message_id,
+          reply_markup: {
+            inline_keyboard: [...checkBtn],
+          },
+        }
+      );
+    });
   });
+
+  req.on("error", (error) => {
+    console.error(error);
+  });
+
+  req.write(jsonDataPay);
+
+  req.end();
 }
 
 //прослушиваем нажатие кнопок
-bot.on("callback_query", (query) => {
+bot.on("callback_query", async (query) => {
   const { chat, message_id, text } = query.message;
   const username = query.from.username;
   const userId = query.from.id;
-  //массив пользователей
-  const arrayUsers = createArrayFromFile("user-data.json");
-  //поиск пользователя по id
-  const user = arrayUsers.find((user) => user.id === userId);
-  const userKey = user.key[0];
-
-  //привязка действий к кнопкам
-  btnsPeriod.forEach((btn) => {
-    if (query.data === `${btn}-ext` && btn === "1") {
-      bot.sendMessage(
-        userId,
-        `заявка на продление ключа на 1 месяц отправлена
-
-Ваш ключ:
-'${userKey.key}'`
-      );
-      bot.sendMessage(
-        myId,
-        `запрос на продление от пользователя на 1 месяц:
-
-      UserName: ${username}
-      UserId:   ${userId}
-      key:  ${userKey.name}
-      `
-      );
-    } else if (query.data === `${btn}-ext` && btn === "3") {
-      bot.sendMessage(
-        userId,
-        `заявка на продление ключа на 3 месяца отправлена
-
-Ваш ключ:
-'${userKey.key}'`
-      );
-      bot.sendMessage(
-        myId,
-        `запрос на продление от пользователя на 3 месяцa:
-
-      UserName: ${username}
-      UserId:   ${userId}
-      key:  ${userKey.name}
-      `
-      );
-    } else if (query.data === `${btn}-bay`) {
-      getKeyExpendet("dataKeys1m.json", userId, btn);
-    }
-  });
+  //есть ли ключ у юзера true/false
+  const keyBooleen = await findUserHaveKey(userId);
 
   switch (query.data) {
     //кнопка купить ключ
     case "bay":
-      if (userKey === undefined) {
-        bot.editMessageText("Выберете срок подписки", {
-          chat_id: chat.id,
-          message_id: message_id,
-          reply_markup: { inline_keyboard: [...creatBtnBay(btnsPeriod)] },
-        });
-      } else {
+      if (keyBooleen === true) {
         bot.editMessageText(
           "У вас уже есть ключ. Для удобства просто продлите его",
           {
@@ -257,13 +500,43 @@ bot.on("callback_query", (query) => {
             },
           }
         );
+      } else {
+        searchAndKeyIssuance(userId);
+        bot.editMessageText(
+          "Вам выдан ключ с пробным периудом 2 дня. Потом просто продлите его.",
+          {
+            chat_id: userId,
+            message_id: message_id,
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "150руб месяц безлимит", callback_data: `pay150` }],
+                [{ text: "50 руб 15ГБ трафика", callback_data: `pay50` }],
+                [
+                  {
+                    text: "🔑 Показать ключ",
+                    callback_data: "check",
+                  },
+                ],
+                [
+                  {
+                    text: "🤖 Android",
+                    url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
+                  },
+                  {
+                    text: "🍎 iOS",
+                    url: "https://apps.apple.com/us/app/foxray/id6448898396",
+                  },
+                ],
+                [backButton],
+              ],
+            },
+          }
+        );
       }
 
       break;
-
+    // Возвращаемся на предыдущий экран
     case "back":
-      // Возвращаемся на предыдущий экран
-
       bot.editMessageText(
         `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
 
@@ -281,7 +554,12 @@ bot.on("callback_query", (query) => {
       break;
     //проверка наличи ключей
     case "check":
-      if (userKey === undefined) {
+      if (keyBooleen === true) {
+        const key = await visionKeyUser(userId);
+        bot
+          .sendMessage(userId, `Ваш ключ №${key[1]}:`)
+          .then(bot.sendMessage(userId, `${key[0]}`));
+      } else {
         bot.editMessageText("у вас нет ключей", {
           chat_id: chat.id,
           message_id: message_id,
@@ -289,23 +567,31 @@ bot.on("callback_query", (query) => {
             inline_keyboard,
           },
         });
-      } else {
-        bot.sendMessage(userId, `Ваш ключ`);
-        bot.sendMessage(userId, `${userKey.key}`);
       }
-
       break;
-    //кнопка продлить ключ
+    // кнопка продлить ключ
     case "extend_key":
-      bot.editMessageText("Выберете срок продления подписки", {
+      bot.editMessageText("Выберете вид продления подписки", {
         chat_id: chat.id,
         message_id: message_id,
-        reply_markup: { inline_keyboard: [...creatBtnsPeriod(btnsPeriod)] },
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "150руб месяц безлимит", callback_data: `pay150` }],
+            [{ text: "50 руб 15ГБ трафика", callback_data: `pay50` }],
+            [backButton],
+          ],
+        },
       });
-
       break;
-
-    //кнопка с програмами
+    // оплата 150
+    case "pay150":
+      pay(userId, message_id, "150");
+      break;
+    //оплата 50
+    case "pay50":
+      pay(userId, message_id, "50");
+      break;
+    // //кнопка с програмами
     case "apps":
       bot.editMessageText(`Приложения для подключения:`, {
         chat_id: chat.id,
@@ -316,7 +602,6 @@ bot.on("callback_query", (query) => {
       });
 
       break;
-
     //кнопка "Связаться с разработчиком"
     case "feedback":
       bot.sendMessage(
@@ -324,114 +609,9 @@ bot.on("callback_query", (query) => {
         `Опишите вашу проблему. Начните сообщение с /help`
       );
       break;
-
-    case "message_key":
-      if (userId === myId) {
-        fs.readFile("dataKeys1m.json", "utf8", (err, data) => {
-          if (err) {
-            console.error(err);
-            return;
-          }
-          const arrayKeys = JSON.parse(data);
-
-          const length = arrayKeys.length;
-
-          bot.editMessageText(`Ключей осталось ${length}`, {
-            chat_id: chat.id,
-            message_id: message_id,
-            reply_markup: {
-              inline_keyboard: [...adminBtn],
-            },
-          });
-        });
-      }
-      break;
-
-    case "message_user":
-      if (userId === myId) {
-        fs.readFile("user-data.json", "utf8", (err, data) => {
-          if (err) {
-            console.error(err);
-            return;
-          }
-          const arrayUser = JSON.parse(data);
-
-          const length = arrayUser.length;
-          bot.editMessageText(`Пользователей ${length}`, {
-            chat_id: chat.id,
-            message_id: message_id,
-            reply_markup: {
-              inline_keyboard: [...adminBtn],
-            },
-          });
-        });
-      }
-      break;
-
-    case "message_active_key":
-      if (userId === myId) {
-        fs.readFile("user-data.json", "utf8", (err, data) => {
-          if (err) {
-            console.error(err);
-            return;
-          }
-          const arrayUser = JSON.parse(data);
-          const usersWithKey = arrayUser.filter((item) => item.key != 0).length;
-          bot.editMessageText(`Активных ключей ${usersWithKey}`, {
-            chat_id: chat.id,
-            message_id: message_id,
-            reply_markup: {
-              inline_keyboard: [...adminBtn],
-            },
-          });
-        });
-      }
-      break;
-
+    //проверить оплату
     case "checkpay":
-      const arrayUser = createArrayFromFile("user-data.json");
-      //ищем пользователя по id
-      const object = findObjectInArray(arrayUser, "id", userId);
-      //добавляем в dataPay номер заказа у пользователя
-      dataPay.order_id = object.order["order_id"];
-      const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
-      const sign = require("node:crypto")
-        .createHash("md5")
-        .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
-        .digest("hex");
-      const options = {
-        hostname: "api.cryptomus.com",
-        path: "/v1/payment",
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          merchant: MERCHANTID,
-          sign: sign,
-        },
-      };
-      const req = https.request(options, (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => {
-          const payFile = JSON.parse(body);
-          if (payFile.result["payment_status"] === "paid") {
-            bot.sendMessage(userId, "Платеж прошел успешно!");
-          } else {
-            bot.sendMessage(userId, "Ошибка платежа!");
-          }
-        });
-      });
-
-      req.on("error", (error) => {
-        console.error(error);
-      });
-
-      req.write(jsonDataPay);
-
-      req.end();
-
+      checkPayUser(dataPay, userId);
       break;
   }
 
@@ -466,9 +646,11 @@ bot.onText(/\/admin/, (msg, [source, match]) => {
 bot.onText(/\/start/, (msg, [source, match]) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  const username = msg.from.username;
-
-  storeUserData(userId, username, chatId);
+  const user = {
+    userId: chatId,
+    name: msg.from.username,
+  };
+  findUserAndAdd(user, userId);
 
   bot.sendMessage(
     chatId,
@@ -485,6 +667,22 @@ bot.onText(/\/start/, (msg, [source, match]) => {
       },
     }
   );
+});
+
+bot.onText(/\/test/, (msg, [source, match]) => {
+  const userId = msg.from.id;
+
+  Find();
+});
+
+bot.onText(/\/del/, (msg, [source, match]) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const user = {
+    id: userId,
+    name: msg.from.username,
+  };
+  del(userId);
 });
 
 bot.onText(/\/sendAll (.+)/, (msg, [source, match]) => {
@@ -566,82 +764,4 @@ bot.onText(/\/more/, (msg) => {
 
 bot.onText(/\/pay/, (msg) => {
   const chatId = msg.from.id;
-  const data = {
-    amount: "1",
-    currency: "USD",
-    order_id: "10",
-    to_currency: "TON",
-    network: "TON",
-  };
-
-  const jsonDataPay = JSON.stringify(data).replace(/\//gm, "\\/");
-
-  const sign = require("node:crypto")
-    .createHash("md5")
-    .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
-    .digest("hex");
-
-  const options = {
-    hostname: "api.cryptomus.com",
-    path: "/v1/payment",
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      merchant: MERCHANTID,
-      sign: sign,
-    },
-  };
-
-  const req = https.request(options, (res) => {
-    let body = "";
-    res.on("data", (chunk) => {
-      body += chunk;
-    });
-    res.on("end", () => {
-      //получаем массив из body
-      const payFile = JSON.parse(body);
-
-      console.log(payFile);
-      //массив пользователей
-      const arrayUser = createArrayFromFile("user-data.json");
-      //ищем пользователя по id
-      const object = findObjectInArray(arrayUser, "id", chatId);
-      //достаем нужные пораметры из ответа от cryptomus
-      const orderArray = {
-        order_id: `${payFile.result["order_id"]}`,
-        url: `${payFile.result["url"]}`,
-        payment_status: `${payFile.result["payment_status"]}`,
-      };
-      //добавляем даные по заказу пользователю
-      object.order = orderArray;
-      //сохраняем массив пользователей обратно в json
-      saveArrayToFile(arrayUser, "user-data.json");
-      bot.sendMessage(
-        chatId,
-        `Ваша ссылка на оплату  по заказу №${object.order["order_id"]}
-${object.order["url"]}
-после перехода по ссылке и оплаты, нажмите кнопку "проверить платеж"`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "Проверить платеж",
-                  callback_data: "checkpay",
-                },
-              ],
-            ],
-          },
-        }
-      );
-    });
-  });
-
-  req.on("error", (error) => {
-    console.error(error);
-  });
-
-  req.write(jsonDataPay);
-
-  req.end();
 });

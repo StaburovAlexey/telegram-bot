@@ -1,19 +1,25 @@
 {
-  "name": "vpnsailess",
+  "name": "c",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "scripts": {
     "start": "nodemon index.js"
   },
   "author": "",
   "license": "ISC",
-  "nodemonConfig": { "ignore": ["*.json"] },
+  "nodemonConfig": {
+    "ignore": [
+      "*.json"
+    ]
+  },
   "devDependencies": {
     "@types/node-telegram-bot-api": "^0.61.7",
     "nodemon": "^3.0.1"
   },
   "dependencies": {
+    "mongodb": "^6.1.0",
+    "node-cron": "^3.0.2",
     "node-telegram-bot-api": "^0.61.0"
-  }
+  },
+  "description": ""
 }

@@ -25,13 +25,13 @@ const adminBtn = [
 const inline_keyboard = [
   [
     {
-      text: "💰Купить ключ",
+      text: "💰Получить ключ",
       callback_data: "bay",
     },
   ],
   [
     {
-      text: "🔑 Проверить наличие ключей",
+      text: "🔑 Показать ключ",
       callback_data: "check",
     },
   ],
@@ -77,10 +77,20 @@ const appBtn = [
   [backButton],
 ];
 
+const checkBtn = [
+  [
+    {
+      text: "Проверить платеж",
+      callback_data: "checkpay",
+    },
+  ],
+]
+
 module.exports = {
   inline_keyboard,
   extendKey,
   appBtn,
   backButton,
   adminBtn,
+  checkBtn
 };

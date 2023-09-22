@@ -9,16 +9,22 @@ const {
   appBtn,
   backButton,
   adminBtn,
-  checkBtn,
 } = require("./inline_keyboard");
-const { bot, APIKEY, MERCHANTID, uri } = require("./token");
+const { bot, APIKEY, MERCHANTID } = require("./token");
 //=====================================
 const https = require("node:https");
-//подключаем Mongo
-const { MongoClient } = require("mongodb");
-// Replace the uri string with your connection string.
-const MongoDBclient = new MongoClient(uri);
-const db = MongoDBclient.db("vpnSAILess");
+const {
+  MongoDBclient,
+  db,
+  findUserAndAdd,
+  findUserHaveKey,
+  visionKeyUser,
+  searchAndKeyIssuance,
+  findArrayOrderId,
+  findPaymentForId,
+  updatingPaymentStatus,
+} = require("./dataBase/dataBase");
+const { arrayNotPaid, sendPay } = require("./cryptomus/cryptomus");
 const dataPay = {
   amount: "50",
   currency: "RUB",
@@ -26,220 +32,25 @@ const dataPay = {
   network: "TON",
   order_id: "",
   lifetime: "300",
+  subtract: "100",
 };
 const myId = 807148322;
 
 //==================
 console.log("bot activated");
 bot.on("polling_error", console.log);
+
+//проверка статуса олпаты
 cron.schedule("*/5 * * * * *", async () => {
   arrayNotPaid();
 });
-//проверка оплаты для cron
-async function payCheck() {}
-//перебор неоконченных оплат
-async function arrayNotPaid() {
-  try {
-    await MongoDBclient.connect();
 
-    const employees = db.collection("payment");
-    const payments = await employees.find({ isFinal: false }).toArray();
-    await MongoDBclient.close();
-
-    payments.forEach((payment) => {
-      dataPay.order_id = payment.orderId;
-
-      const jsonData = JSON.stringify(dataPay).replace(/\//gm, "\\/");
-      const sign = require("crypto")
-        .createHash("md5")
-        .update(Buffer.from(jsonData).toString("base64") + APIKEY)
-        .digest("hex");
-
-      const options = {
-        hostname: "api.cryptomus.com",
-        path: "/v1/payment",
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          merchant: MERCHANTID,
-          sign: sign,
-        },
-      };
-
-      const req = https.request(options, (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => {
-          const payFile = JSON.parse(body);
-
-          const orderId = payFile.result["order_id"];
-          const isFinal = payFile.result["is_final"];
-          if (
-            payFile.result["is_final"] === true &&
-            (payFile.result["payment_status"] === "wrong_amount" ||
-            payFile.result["payment_status"] === "paid_over" ||
-            payFile.result["payment_status"] === "paid")
-          ) {
-            updatingPaymentStatus(orderId, isFinal);
-            bot.sendMessage(
-              payment.userId,
-              `Оплата по заказу №${payment.orderId} прошла успешно! В течении 15-30 минут ключ будет продлен.`
-            );
-          } else if (
-            payFile.result["is_final"] === true ||
-            payFile.result["is_final"] === "cancel"
-          ) {
-            updatingPaymentStatus(orderId, isFinal);
-            bot.sendMessage(
-              payment.userId,
-              `время предоставления ссылки для оплаты по заказу №${payment.orderId}истекло. попробуйте заплатить сново`
-            );
-          }
-        });
-      });
-
-      req.on("error", (error) => {
-        console.error(error);
-      });
-
-      req.write(jsonData);
-      req.end();
-    });
-  } catch (e) {
-    console.log(e);
-  }
-}
-//добавляем юзера в базу
-const InsertUser = async (user) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employees = db.collection("users");
-    await employees.insertOne(user);
-
-    await MongoDBclient.close();
-  } catch (e) {
-    console.log(e);
-  }
-};
-//проверка юзера в базе если его нет то добаляем в базу
-const findUserAndAdd = async (user, userId) => {
-  try {
-    await MongoDBclient.connect();
-    console.log("Успешно подключились к базе данных");
-
-    const findId = await db.collection("users").findOne({ userId: userId });
-    if (!findId) {
-      await InsertUser(user);
-    } else {
-      console.log("Пользователь уже добавлен");
-    }
-
-    await MongoDBclient.close();
-    console.log("Закрыли подключение");
-  } catch (e) {
-    console.log(e);
-  }
-};
-//проверка есть ли ключ у пользователя
-const findUserHaveKey = async (userId) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employees = db.collection("users");
-    const user = await employees.findOne({ userId: userId });
-
-    await MongoDBclient.close();
-    //возвращаем есть ли ключ
-    if (user.key) {
-      return true;
-    } else {
-      return false;
-    }
-  } catch (e) {
-    console.log(e);
-  }
-};
-//показать ключ пользователя
-const visionKeyUser = async (userId) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employees = db.collection("users");
-    const user = await employees.findOne({ userId: userId });
-
-    await MongoDBclient.close();
-    //возвращаемключ
-    return user.key;
-  } catch (e) {
-    console.log(e);
-  }
-};
-//поиск не используемового ключа и выдача
-const searchAndKeyIssuance = async (userId) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employeeskey = db.collection("keys");
-    const key = await employeeskey.findOne({ userId: { $exists: false } });
-    if (key) {
-      key.userId = userId;
-      // Обновить документ в коллекции
-      await employeeskey.updateOne({ _id: key._id }, { $set: key });
-      await giveKey(userId, key);
-    } else {
-      console.log('Документ без свойства "key" не существует в коллекции');
-    }
-
-    await MongoDBclient.close();
-  } catch (e) {
-    console.log(e);
-  }
-};
-//добовление пользователю ключа
-const giveKey = async (userId, key) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employeesuser = db.collection("users");
-    const user = await employeesuser.findOne({ userId: userId });
-
-    user.key = [key.url, key.urlName];
-
-    await employeesuser.updateOne({ _id: user._id }, { $set: user });
-
-    await MongoDBclient.close();
-  } catch (e) {
-    console.log(e);
-  }
-};
-//добовление оплаты в массив
-const writePayment = async (userId, order_id, amount, url, is_final) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employees = db.collection("payment");
-    await employees.insertOne({
-      userId: userId,
-      orderId: order_id,
-      amount: amount,
-      url: url,
-      isFinal: is_final,
-    });
-
-    await MongoDBclient.close();
-  } catch (e) {
-    console.log(e);
-  }
-};
 const Find = async () => {
   try {
     await MongoDBclient.connect();
     console.log("Успешно подключились к базе данных");
 
-    const AllDocuments = await db.collection("payment").find().toArray();
+    const AllDocuments = await db.collection("keys").find().toArray();
     console.log(AllDocuments);
 
     await MongoDBclient.close();
@@ -271,25 +82,22 @@ async function pay(userId, message_id, sum) {
   dataPay.amount = sum;
   sendPay(dataPay, userId, message_id);
 }
+
+// Создать функцию для генерации случайного значения из цифр и букв
+function generateRandomValue() {
+  let randomValue = "";
+  const words =
+    "0123456789qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM";
+  var max_position = words.length - 1;
+  for (i = 0; i < 20; ++i) {
+    position = Math.floor(Math.random() * max_position);
+    randomValue = randomValue + words.substring(position, position + 1);
+  }
+  // Вернуть случайное значение
+  return randomValue;
+}
 //генерация order_id и проверка на повторение
 async function generateOrderId() {
-  // Создать функцию для генерации случайного значения из цифр и букв
-  function generateRandomValue() {
-    // Создать пустую строку для хранения случайного значения
-    let randomValue = "";
-    // Сгенерировать 15 случайных чисел от 0 до 9 и добавить их к строке
-    for (let i = 0; i < 15; i++) {
-      randomValue += Math.floor(Math.random() * 10);
-    }
-
-    // Сгенерировать 15 случайных букв от A до Z и добавить их к строке
-    for (let i = 0; i < 15; i++) {
-      randomValue += String.fromCharCode(Math.floor(Math.random() * 26) + 65);
-    }
-
-    // Вернуть случайное значение
-    return randomValue;
-  }
   const randomValue = generateRandomValue();
   const find = await findArrayOrderId(randomValue);
   if (find === true) {
@@ -298,59 +106,7 @@ async function generateOrderId() {
     return randomValue;
   }
 }
-//есть ли сгенерированый ордер в базе возвращает булево значение
-const findArrayOrderId = async (randomValue) => {
-  try {
-    await MongoDBclient.connect();
-    const employees = db.collection("payment");
-    const payments = await employees.find({ orderId: randomValue }).toArray();
-    await MongoDBclient.close();
-    if (payments.length == 0) {
-      return false;
-    } else {
-      return true;
-    }
-  } catch (e) {
-    console.log(e);
-  }
-};
-//поиск оплаты по id юзера
-const findPaymentForId = async (userId) => {
-  try {
-    await MongoDBclient.connect();
 
-    const employees = db.collection("payment");
-    const payment = await employees
-      .find({ userId: userId, isFinal: false })
-      .limit(1)
-      .sort({ $natural: -1 })
-      .toArray();
-
-    await MongoDBclient.close();
-    //возвращаем платеж
-    return payment;
-  } catch (e) {
-    console.log(e);
-  }
-};
-//обновление статуса оплаты в базе
-const updatingPaymentStatus = async (orderId, isFinal) => {
-  try {
-    await MongoDBclient.connect();
-
-    const employees = db.collection("payment");
-    await employees.updateOne(
-      { orderId: orderId },
-      {
-        $set: { isFinal: isFinal },
-      }
-    );
-
-    await MongoDBclient.close();
-  } catch (e) {
-    console.log(e);
-  }
-};
 //проверка оплаты пользователя
 async function checkPayUser(dataPay, userId) {
   try {
@@ -419,64 +175,6 @@ async function checkPayUser(dataPay, userId) {
     console.log(e);
   }
 }
-//отправка запроса на оплату
-function sendPay(dataPay, userId, message_id) {
-  const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
-
-  const sign = require("node:crypto")
-    .createHash("md5")
-    .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
-    .digest("hex");
-
-  const options = {
-    hostname: "api.cryptomus.com",
-    path: "/v1/payment",
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      merchant: MERCHANTID,
-      sign: sign,
-    },
-  };
-
-  const req = https.request(options, (res) => {
-    let body = "";
-    res.on("data", (chunk) => {
-      body += chunk;
-    });
-    res.on("end", () => {
-      //получаем массив из body
-      const payFile = JSON.parse(body);
-      const order_id = payFile.result["order_id"];
-      const amount = payFile.result["amount"];
-      const url = payFile.result["url"];
-      const is_final = payFile.result["is_final"];
-      writePayment(userId, order_id, amount, url, is_final);
-      //добавляем даные по заказу пользователю
-
-      bot.editMessageText(
-        `Ваша ссылка на оплату  по заказу №${order_id}
-      ${url}
-      после перехода по ссылке и оплаты, нажмите кнопку "проверить платеж"`,
-        {
-          chat_id: userId,
-          message_id: message_id,
-          reply_markup: {
-            inline_keyboard: [...checkBtn],
-          },
-        }
-      );
-    });
-  });
-
-  req.on("error", (error) => {
-    console.error(error);
-  });
-
-  req.write(jsonDataPay);
-
-  req.end();
-}
 
 //прослушиваем нажатие кнопок
 bot.on("callback_query", async (query) => {
@@ -517,16 +215,7 @@ bot.on("callback_query", async (query) => {
                     callback_data: "check",
                   },
                 ],
-                [
-                  {
-                    text: "🤖 Android",
-                    url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
-                  },
-                  {
-                    text: "🍎 iOS",
-                    url: "https://apps.apple.com/us/app/foxray/id6448898396",
-                  },
-                ],
+                appBtn,
                 [backButton],
               ],
             },
@@ -611,7 +300,7 @@ bot.on("callback_query", async (query) => {
       break;
     //проверить оплату
     case "checkpay":
-      checkPayUser(dataPay, userId);
+      arrayNotPaid();
       break;
   }
 
@@ -671,61 +360,12 @@ bot.onText(/\/start/, (msg, [source, match]) => {
 
 bot.onText(/\/test/, (msg, [source, match]) => {
   const userId = msg.from.id;
-
-  Find();
 });
 
 bot.onText(/\/del/, (msg, [source, match]) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  const user = {
-    id: userId,
-    name: msg.from.username,
-  };
   del(userId);
-});
-
-bot.onText(/\/sendAll (.+)/, (msg, [source, match]) => {
-  const { id } = msg.chat;
-
-  fs.readFile("user-data.json", "utf8", (err, data) => {
-    if (err) {
-      console.error(err);
-      return;
-    }
-
-    const array = JSON.parse(data);
-
-    array.forEach((user) => {
-      bot.sendMessage(user.id, `${match}`);
-    });
-  });
-});
-
-bot.onText(/\/sendOne (.+)/, (msg, [source, match]) => {
-  const { id } = msg.chat;
-  fs.readFile("user-data.json", "utf8", (err, data) => {
-    if (err) {
-      console.error(err);
-      return;
-    }
-    //делаем из сообщения массив
-    const matchArray = match.split(" ");
-    //удаляем из массива сообщения id пользователя
-    const newArray = matchArray.slice(1);
-    //возвращаем строку
-    const string = newArray.join(" ");
-
-    const array = JSON.parse(data);
-
-    const user = array.find((user) => user.id == `${matchArray[0]}`);
-
-    if (user === undefined) {
-      bot.sendMessage(myId, "Не нашел id");
-    } else {
-      bot.sendMessage(user.id, string);
-    }
-  });
 });
 
 bot.onText(/\/help (.+)/, (msg, [source, match]) => {
@@ -760,8 +400,4 @@ bot.onText(/\/more/, (msg) => {
 
     Google (с)`
   );
-});
-
-bot.onText(/\/pay/, (msg) => {
-  const chatId = msg.from.id;
 });

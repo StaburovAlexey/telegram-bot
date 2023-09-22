@@ -64,17 +64,14 @@ const extendKey = [
   [backButton],
 ];
 const appBtn = [
-  [
-    {
-      text: "🤖 Android",
-      url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
-    },
-    {
-      text: "🍎 iOS",
-      url: "https://apps.apple.com/us/app/foxray/id6448898396",
-    },
-  ],
-  [backButton],
+  {
+    text: "🤖 Android",
+    url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
+  },
+  {
+    text: "🍎 iOS",
+    url: "https://apps.apple.com/us/app/foxray/id6448898396",
+  },
 ];
 
 const checkBtn = [
@@ -84,7 +81,7 @@ const checkBtn = [
       callback_data: "checkpay",
     },
   ],
-]
+];
 
 module.exports = {
   inline_keyboard,
@@ -92,5 +89,5 @@ module.exports = {
   appBtn,
   backButton,
   adminBtn,
-  checkBtn
+  checkBtn,
 };

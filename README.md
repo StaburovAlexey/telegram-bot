@@ -1,4 +1,5 @@
 # telegram-bot
-### Сервис для продажи услуг через телеграм бота
+## Сервис для продажи услуг через телеграм бота
 
-!\[alttext\](https://badgen.net/#static/node.js/18.18.0/green)
+!\[node.js\] (https://badgen.net/#static/node.js/18.18.0/green)
+!\[my badge\](https://badgen.net/badge/hello/world/red?icon=twitter)

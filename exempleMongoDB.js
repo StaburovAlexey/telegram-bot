@@ -55,13 +55,13 @@ const InsertUser = async (user) =>{
 
 Insert()
 
-const Update = async () =>{
+const Update = async (userId,) =>{
   try {
       await MongoDBclient.connect()
       console.log("Успешно подключились к базе данных")
 
       const employees = MongoDBclient.db('testdb').collection('employees')
-      await employees.findOneAndUpdate({first_name: 'Anton'} , { $set: {first_name: "Antoshka"}})
+      await employees.findOneAndUpdate({userId: userId} , { $set: {timeEnd: "2023 8 23"}})
 
       await MongoDBclient.close()
       console.log("Закрыли подключение")

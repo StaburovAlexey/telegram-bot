@@ -1,8 +1,6 @@
 const { match } = require("assert");
 const { url } = require("inspector");
 const cron = require("node-cron");
-// импортируем модуль для работы с файловой системой
-const fs = require("fs");
 const {
   inline_keyboard,
   extendKey,
@@ -10,9 +8,8 @@ const {
   backButton,
   adminBtn,
 } = require("./inline_keyboard");
-const { bot, APIKEY, MERCHANTID } = require("./token");
-//=====================================
-const https = require("node:https");
+
+const { bot } = require("./token");
 const {
   MongoDBclient,
   db,
@@ -21,22 +18,10 @@ const {
   visionKeyUser,
   searchAndKeyIssuance,
   findArrayOrderId,
-  findPaymentForId,
-  updatingPaymentStatus,
 } = require("./dataBase/dataBase");
-const { arrayNotPaid, sendPay } = require("./cryptomus/cryptomus");
-const dataPay = {
-  amount: "50",
-  currency: "RUB",
-  to_currency: "TON",
-  network: "TON",
-  order_id: "",
-  lifetime: "300",
-  subtract: "100",
-};
-const myId = 807148322;
+const { arrayNotPaid, sendPay, dataPay } = require("./cryptomus/cryptomus");
 
-//==================
+const myId = 807148322;
 console.log("bot activated");
 bot.on("polling_error", console.log);
 
@@ -44,14 +29,39 @@ bot.on("polling_error", console.log);
 cron.schedule("*/5 * * * * *", async () => {
   arrayNotPaid();
 });
+//проверка статуса подписки
+cron.schedule("* * */13 * * *", async () => {
+  checkSub();
+});
 
 const Find = async () => {
   try {
     await MongoDBclient.connect();
     console.log("Успешно подключились к базе данных");
 
-    const AllDocuments = await db.collection("keys").find().toArray();
+    const AllDocuments = await db.collection("users").find().toArray();
     console.log(AllDocuments);
+
+    await MongoDBclient.close();
+    console.log("Закрыли подключение");
+  } catch (e) {
+    console.log(e);
+  }
+};
+const Update = async (userId) => {
+  try {
+    await MongoDBclient.connect();
+    console.log("Успешно подключились к базе данных");
+
+    const employees = db.collection("users");
+    await employees.findOneAndUpdate(
+      { userId: userId },
+      {
+        $set: {
+          timeEnd: `${date.getFullYear()} ${date.getMonth()} ${date.getDate()}`,
+        },
+      }
+    );
 
     await MongoDBclient.close();
     console.log("Закрыли подключение");
@@ -76,13 +86,13 @@ const del = async (userId) => {
     console.log(e);
   }
 };
+//оплата
 async function pay(userId, message_id, sum) {
   const randomValue = await generateOrderId();
   dataPay.order_id = randomValue;
   dataPay.amount = sum;
   sendPay(dataPay, userId, message_id);
 }
-
 // Создать функцию для генерации случайного значения из цифр и букв
 function generateRandomValue() {
   let randomValue = "";
@@ -107,70 +117,34 @@ async function generateOrderId() {
   }
 }
 
-//проверка оплаты пользователя
-async function checkPayUser(dataPay, userId) {
+//проверка крон на состояние подписки
+async function checkSub() {
   try {
-    const payment = await findPaymentForId(userId);
-    dataPay.order_id = payment[0].orderId;
-    const jsonDataPay = JSON.stringify(dataPay).replace(/\//gm, "\\/");
+    const date = new Date();
+    const dateWarning = new Date();
 
-    const sign = require("node:crypto")
-      .createHash("md5")
-      .update(Buffer.from(jsonDataPay).toString("base64") + APIKEY)
-      .digest("hex");
+    dateWarning.setDate(date.getDate() + 3);
 
-    const options = {
-      hostname: "api.cryptomus.com",
-      path: "/v1/payment",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        merchant: MERCHANTID,
-        sign: sign,
-      },
-    };
+    await MongoDBclient.connect();
 
-    const req = https.request(options, (res) => {
-      let body = "";
-      res.on("data", (chunk) => {
-        body += chunk;
-      });
-      res.on("end", () => {
-        const payFile = JSON.parse(body);
-        if (
-          payFile.result["is_final"] === true &&
-          (payFile.result["payment_status"] === "paid" ||
-            payFile.result["payment_status"] === "paid_over" ||
-            payFile.result["payment_status"] === "wrong_amount")
-        ) {
-          const orderId = payFile.result["order_id"];
-          const isFinal = payFile.result["is_final"];
-          updatingPaymentStatus(orderId, isFinal);
-          bot.sendMessage(
-            payment[0].userId,
-            "Оплата прошла успешно! В течении 15-30 минут ключ будет продлен."
-          );
-        } else if (
-          payFile.result["is_final"] === true &&
-          payFile.result["payment_status"] === "cancel"
-        ) {
-          bot.sendMessage(
-            payment[0].userId,
-            "cсылка устарела, продлите ключ заного"
-          );
-        } else {
-          bot.sendMessage(payment[0].userId, "в процессе");
-        }
-      });
+    const users = await db.collection("users").find().toArray();
+
+    await MongoDBclient.close();
+    users.forEach((user) => {
+      if (
+        user.timeEnd ==
+        `${date.getFullYear()} ${date.getMonth()} ${date.getDate()}`
+      ) {
+        bot.sendMessage(user.userId, "подписка закончилась");
+      } else if (
+        user.timeEnd ==
+        `${dateWarning.getFullYear()} ${dateWarning.getMonth()} ${dateWarning.getDate()}`
+      ) {
+        bot.sendMessage(user.userId, "подписка закончится через 3 дня");
+      }else{
+        bot.sendMessage(myId,"Проверка пользователей на подписку")
+      }
     });
-
-    req.on("error", (error) => {
-      console.error(error);
-    });
-
-    req.write(jsonDataPay);
-
-    req.end();
   } catch (e) {
     console.log(e);
   }
@@ -194,7 +168,7 @@ bot.on("callback_query", async (query) => {
             chat_id: chat.id,
             message_id: message_id,
             reply_markup: {
-              inline_keyboard: [...extendKey],
+              inline_keyboard: extendKey,
             },
           }
         );
@@ -215,8 +189,22 @@ bot.on("callback_query", async (query) => {
                     callback_data: "check",
                   },
                 ],
-                appBtn,
-                [backButton],
+                [
+                  {
+                    text: "🤖 Android",
+                    url: "https://play.google.com/store/apps/details?id=com.v2ray.ang&hl=ru&gl=US&pli=1",
+                  },
+                  {
+                    text: "🍎 iOS",
+                    url: "https://apps.apple.com/us/app/foxray/id6448898396",
+                  },
+                ],
+                [
+                  {
+                    text: `↩ Назад`,
+                    callback_data: "back",
+                  },
+                ],
               ],
             },
           }
@@ -229,7 +217,7 @@ bot.on("callback_query", async (query) => {
       bot.editMessageText(
         `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
 
-  📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
+  📱 Доступ к Instagram, Twitter, Facebook и другим недоступным ресурсам
 
   🚀 Хорошая скорость и неограниченное число устройств
 
@@ -265,9 +253,9 @@ bot.on("callback_query", async (query) => {
         message_id: message_id,
         reply_markup: {
           inline_keyboard: [
-            [{ text: "150руб месяц безлимит", callback_data: `pay150` }],
-            [{ text: "50 руб 15ГБ трафика", callback_data: `pay50` }],
-            [backButton],
+            [{ text: "💲 150руб месяц безлимит", callback_data: `pay150` }],
+            [{ text: "💲 50 руб 15ГБ трафика", callback_data: `pay50` }],
+            backButton,
           ],
         },
       });
@@ -286,7 +274,7 @@ bot.on("callback_query", async (query) => {
         chat_id: chat.id,
         message_id: message_id,
         reply_markup: {
-          inline_keyboard: [...appBtn],
+          inline_keyboard: [appBtn, backButton],
         },
       });
 
@@ -345,7 +333,7 @@ bot.onText(/\/start/, (msg, [source, match]) => {
     chatId,
     `vpnSAILess открывает доступ к свободному и безопасному интернету с любого устройства
 
-  📱 Доступ к Instagram, Twitter, TikTok, Facebook и другим недоступным ресурсам
+  📱 Доступ к Instagram, Twitter, Facebook и другим недоступным ресурсам
 
   🚀 Хорошая скорость и неограниченное число устройств
 
@@ -360,6 +348,8 @@ bot.onText(/\/start/, (msg, [source, match]) => {
 
 bot.onText(/\/test/, (msg, [source, match]) => {
   const userId = msg.from.id;
+
+  Find();
 });
 
 bot.onText(/\/del/, (msg, [source, match]) => {

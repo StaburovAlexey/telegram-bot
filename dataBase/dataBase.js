@@ -184,6 +184,29 @@ const updatingPaymentStatus = async (orderId, isFinal) => {
   }
 };
 
+//добавление срока подписки в базу к ключам
+const addEndDate = async (userId) => {
+  try {
+    const dateEnd = new Date();
+    dateEnd.setDate(date.getDate() + 31);
+    await MongoDBclient.connect();
+
+    const employees = db.collection("users");
+    await employees.updateOne(
+      { userId: userId },
+      {
+        $set: {
+          timeEnd: `${dateEnd.getFullYear()} ${dateEnd.getMonth()} ${dateEnd.getDate()}`,
+        },
+      }
+    );
+
+    await MongoDBclient.close();
+  } catch (e) {
+    console.log(e);
+  }
+};
+
 module.exports = {
   MongoDBclient,
   db,
@@ -193,5 +216,7 @@ module.exports = {
   searchAndKeyIssuance,
   findArrayOrderId,
   findPaymentForId,
-  updatingPaymentStatus
+  updatingPaymentStatus,
+  writePayment,
+  addEndDate
 };

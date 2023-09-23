@@ -1,7 +1,9 @@
-const backButton = {
-  text: `↩ Назад`,
-  callback_data: "back",
-};
+const backButton = [
+  {
+    text: `↩ Назад`,
+    callback_data: "back",
+  },
+];
 const adminBtn = [
   [
     {
@@ -37,12 +39,6 @@ const inline_keyboard = [
   ],
   [
     {
-      text: "✅ Проверить последний платеж",
-      callback_data: "checkpay",
-    },
-  ],
-  [
-    {
       text: "⚙️ Приложения для запуска",
       callback_data: "apps",
     },
@@ -61,7 +57,7 @@ const extendKey = [
       callback_data: "extend_key",
     },
   ],
-  [backButton],
+  backButton,
 ];
 const appBtn = [
   {

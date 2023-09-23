@@ -3,7 +3,23 @@ const {
   writePayment,
   MongoDBclient,
   db,
+  addEndDate
 } = require("../dataBase/dataBase");
+
+const {
+  inline_keyboard,
+} = require("../inline_keyboard");
+const { bot, APIKEY, MERCHANTID } = require("../token");
+const https = require("node:https");
+const dataPay = {
+  amount: "50",
+  currency: "RUB",
+  to_currency: "TON",
+  network: "TON",
+  order_id: "",
+  lifetime: "300",
+  subtract: "100",
+};
 //перебор неоконченных оплат
 async function arrayNotPaid() {
   try {
@@ -50,6 +66,7 @@ async function arrayNotPaid() {
               payFile.result["payment_status"] === "paid")
           ) {
             updatingPaymentStatus(orderId, isFinal);
+            addEndDate(payment.userId)
             bot.sendMessage(
               payment.userId,
               `Оплата по заказу №${payment.orderId} прошла успешно! В течении 15-30 минут ключ будет продлен.`
@@ -140,4 +157,5 @@ function sendPay(dataPay, userId, message_id) {
 module.exports = {
   arrayNotPaid,
   sendPay,
+  dataPay,
 };
